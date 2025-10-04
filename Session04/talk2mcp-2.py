@@ -74,6 +74,8 @@ async def main():
                 tools = tools_result.tools
                 print(f"Successfully retrieved {len(tools)} tools")
 
+                import pdb; pdb.set_trace()
+
                 # Create system prompt with available tools
                 print("Creating system prompt...")
                 print(f"Number of tools: {len(tools)}")

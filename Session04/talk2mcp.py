@@ -14,7 +14,7 @@ load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key)
 
-max_iterations = 3
+max_iterations = 10
 last_response = None
 iteration = 0
 iteration_response = []
@@ -59,7 +59,7 @@ async def main():
         print("Establishing connection to MCP server...")
         server_params = StdioServerParameters(
             command="python",
-            args=["example2.py"]
+            args=["paint-mcp-server.py"]
         )
 
         async with stdio_client(server_params) as (read, write):
@@ -73,7 +73,6 @@ async def main():
                 tools_result = await session.list_tools()
                 tools = tools_result.tools
                 print(f"Successfully retrieved {len(tools)} tools")
-                
 
                 # Create system prompt with available tools
                 print("Creating system prompt...")
@@ -117,32 +116,54 @@ async def main():
                     tools_description = "Error loading tools"
                 
                 print("Created system prompt...")
-                import pdb; pdb.set_trace()
+                # import pdb; pdb.set_trace()
                 
-                system_prompt = f"""You are a math agent solving problems in iterations. You have access to various mathematical tools.
+                system_prompt = f"""You are a math agent with painting skills solving problems in iterations. You have access to various mathematical tools.
+                You also have access to a MSPaint application to draw and add your solution to the canvas.
 
-Available tools:
-{tools_description}
+                Available tools:
+                {tools_description}
 
-You must respond with EXACTLY ONE line in one of these formats (no additional text):
-1. For function calls:
-   FUNCTION_CALL: function_name|param1|param2|...
-   
-2. For final answers:
-   FINAL_ANSWER: [number]
+                MSPaint Application Information:
+                Rectangle co-ordinates: x1 = 957, y1 = 943, x2 = 1225, y2 = 1104
 
-Important:
-- When a function returns multiple values, you need to process all of them
-- Only give FINAL_ANSWER when you have completed all necessary calculations
-- Do not repeat function calls with the same parameters
+                
+                You must respond with EXACTLY ONE line in one of these formats (no additional text):
+                1. For function calls:
+                FUNCTION_CALL: function_name|param1|param2|...
+                
+                2. For final answers:
+                FINAL_ANSWER: number
 
-Examples:
-- FUNCTION_CALL: add|5|3
-- FUNCTION_CALL: strings_to_chars_to_int|INDIA
-- FINAL_ANSWER: [42]
+                3. For drawing in Paint:
+                USE_PAINT: function_name|param1|param2|...
 
-DO NOT include any explanations or additional text.
-Your entire response should be a single line starting with either FUNCTION_CALL: or FINAL_ANSWER:"""
+                4. For completing the task:
+                COMPLETE_RUN
+
+                Important:
+                - When a function returns multiple values, you need to process all of them
+                - Only give FINAL_ANSWER when you have completed all necessary calculations
+                - Only USE_PAINT when you are ready to draw in Paint with the FINAL_ANSWER
+                - Using paint Steps:
+                    - First start the paint application by calling open_paint
+                    - Then draw a rectangle using draw_rectangle giving correct parameters
+                    - Finally add text using add_text_in_paint with the FINAL_ANSWER: number as text
+                    - You must call these functions in the correct order
+                - Do not include multiple responses. Give ONE response at a time.
+                - Do not include any explanations or additional text.
+                - Do not repeat function calls with the same parameters
+                - After you have completed the task, you can call COMPLETE_RUN to end the program
+
+                Examples:
+                - FUNCTION_CALL: add|5|3
+                - FUNCTION_CALL: strings_to_chars_to_int|INDIA
+                - FINAL_ANSWER: 42
+                - USE_PAINT: draw_rectangle|957|943|1225|1104
+                - COMPLETE_RUN
+
+                DO NOT include any explanations or additional text.
+                Your entire response should be a single line starting with either FUNCTION_CALL: or FINAL_ANSWER: or USE_PAINT: or COMPLETE_RUN"""
 
                 query = """Find the ASCII values of characters in INDIA and then return sum of exponentials of those values. """
                 print("Starting iteration loop...")
@@ -169,7 +190,7 @@ Your entire response should be a single line starting with either FUNCTION_CALL:
                         # Find the FUNCTION_CALL line in the response
                         for line in response_text.split('\n'):
                             line = line.strip()
-                            if line.startswith("FUNCTION_CALL:"):
+                            if (line.startswith("FUNCTION_CALL:") or line.startswith("USE_PAINT:")):
                                 response_text = line
                                 break
                         
@@ -178,7 +199,7 @@ Your entire response should be a single line starting with either FUNCTION_CALL:
                         break
 
 
-                    if response_text.startswith("FUNCTION_CALL:"):
+                    if response_text.startswith("FUNCTION_CALL:") or response_text.startswith("USE_PAINT:"):
                         _, function_info = response_text.split(":", 1)
                         parts = [p.strip() for p in function_info.split("|")]
                         func_name, params = parts[0], parts[1:]
@@ -218,9 +239,11 @@ Your entire response should be a single line starting with either FUNCTION_CALL:
                                 elif param_type == 'number':
                                     arguments[param_name] = float(value)
                                 elif param_type == 'array':
+                                    import pdb; pdb.set_trace()
                                     # Handle array input
                                     if isinstance(value, str):
-                                        value = value.strip('[]').split(',')
+                                        value = value.strip('[]')
+                                        value = value.split(',')
                                     arguments[param_name] = [int(x.strip()) for x in value]
                                 else:
                                     arguments[param_name] = str(value)
@@ -229,6 +252,11 @@ Your entire response should be a single line starting with either FUNCTION_CALL:
                             print(f"DEBUG: Calling tool {func_name}")
                             
                             result = await session.call_tool(func_name, arguments=arguments)
+
+                            # Wait longer for Paint to be fully maximized
+                            if func_name.startswith("open_paint"):
+                                await asyncio.sleep(1)
+
                             print(f"DEBUG: Raw result: {result}")
                             
                             # Get the full result content
@@ -269,33 +297,43 @@ Your entire response should be a single line starting with either FUNCTION_CALL:
                             break
 
                     elif response_text.startswith("FINAL_ANSWER:"):
-                        print("\n=== Agent Execution Complete ===")
-                        result = await session.call_tool("open_paint")
-                        print(result.content[0].text)
+                        print("\n=== Math Agent Execution Complete ===")
+                        iteration_response.append(
+                                f"In the {iteration + 1} you completed calculations with {response_text}."
+                                f"Now call the paint tools starting with USE_PAINT: open_paint"
+                                f"Then draw_rectangle with Rectangle co-ordinates followed by add_text_in_paint with the {response_text} as text."
+                            )
+                        last_response = iteration_result
+                        # Commented out the manual call of paint tools
+                        # result = await session.call_tool("open_paint")
+                        # print(result.content[0].text)
 
-                        # Wait longer for Paint to be fully maximized
-                        await asyncio.sleep(1)
+                        # # Wait longer for Paint to be fully maximized
+                        # await asyncio.sleep(1)
 
-                        # Draw a rectangle
-                        result = await session.call_tool(
-                            "draw_rectangle",
-                            arguments={
-                                "x1": 780,
-                                "y1": 380,
-                                "x2": 1140,
-                                "y2": 700
-                            }
-                        )
-                        print(result.content[0].text)
+                        # # Draw a rectangle
+                        # result = await session.call_tool(
+                        #     "draw_rectangle",
+                        #     arguments={
+                        #         "x1": 780,
+                        #         "y1": 380,
+                        #         "x2": 1140,
+                        #         "y2": 700
+                        #     }
+                        # )
+                        # print(result.content[0].text)
 
-                        # Draw rectangle and add text
-                        result = await session.call_tool(
-                            "add_text_in_paint",
-                            arguments={
-                                "text": response_text
-                            }
-                        )
-                        print(result.content[0].text)
+                        # # Draw rectangle and add text
+                        # result = await session.call_tool(
+                        #     "add_text_in_paint",
+                        #     arguments={
+                        #         "text": response_text
+                        #     }
+                        # )
+                        # print(result.content[0].text)
+                        # break
+                    elif response_text.startswith("COMPLETE_RUN"):
+                        print("\n=== Task complete. Ending run now ===")
                         break
 
                     iteration += 1
