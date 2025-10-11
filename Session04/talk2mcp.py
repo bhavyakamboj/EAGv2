@@ -118,24 +118,55 @@ async def main():
                 print("Created system prompt...")
                 # import pdb; pdb.set_trace()
                 
-                system_prompt = f"""Math agent with painting skills. Access to mathematical tools and MSPaint (rectangle coords: 957,943,1225,1104).
+                system_prompt = f"""You are a math agent with painting skills solving problems in iterations. You have access to various mathematical tools.
+                You also have access to a MSPaint application to draw and add your solution to the canvas.
 
-                Tools: {tools_description}
+                Available tools:
+                {tools_description}
 
-                Response format - ONE line only:
-                - FUNCTION_CALL: function_name|param1|param2|...
-                - FINAL_ANSWER: number
-                - USE_PAINT: function_name|param1|param2|...
-                - COMPLETE
+                MSPaint Application Information:
+                Rectangle co-ordinates: x1 = 957, y1 = 943, x2 = 1225, y2 = 1104
 
-                Rules:
-                - Process all function return values
-                - FINAL_ANSWER only after all calculations complete
-                - Paint workflow: open_paint → draw_rectangle → add_text_in_paint (with FINAL_ANSWER)
-                - One response at a time, no explanations, no duplicate calls
-                - End with COMPLETE when done
 
-                Examples: FUNCTION_CALL: add|5|3 | FINAL_ANSWER: 42 | USE_PAINT: draw_rectangle|957|943|1225|1104"""
+                You must respond with EXACTLY ONE line in one of these formats (no additional text):
+                1. For function calls:
+                FUNCTION_CALL: function_name|param1|param2|...
+
+                2. For final answers:
+                FINAL_ANSWER: number
+
+                3. For drawing in Paint:
+                USE_PAINT: function_name|param1|param2|...
+
+                4. For completing the task:
+                COMPLETE_RUN
+
+                Important:
+                - When a function returns multiple values, you need to process all of them
+                - Only give FINAL_ANSWER when you have completed all necessary calculations
+                - Only USE_PAINT when you are ready to draw in Paint with the FINAL_ANSWER
+                - Using paint Steps:
+                    - First start the paint application by calling open_paint
+                    - Then draw a rectangle using draw_rectangle giving correct parameters
+                    - Finally add text using add_text_in_paint with the FINAL_ANSWER: number as text
+                    - You must call these functions in the correct order
+                - Do not include multiple responses. Give ONE response at a time.
+                - Do not include any explanations or additional text.
+                - Do not repeat function calls with the same parameters
+                - After you have completed the task, you can call COMPLETE_RUN to end the program
+
+                Examples:
+                - FUNCTION_CALL: add|5|3
+                - FUNCTION_CALL: strings_to_chars_to_int|INDIA
+                - FINAL_ANSWER: 42
+                - USE_PAINT: draw_rectangle|957|943|1225|1104
+                - COMPLETE_RUN
+
+                DO NOT include any explanations or additional text.
+                Your entire response should be a single line starting with either FUNCTION_CALL: or FINAL_ANSWER: or USE_PAINT: or COMPLETE_RUN"""
+
+                with open('evaluation_prompt.md', 'r') as file:
+                    evaluation_prompt = file.read()
 
                 query = """Find the ASCII values of characters in INDIA and then return sum of exponentials of those values. """
                 print("Starting iteration loop...")
@@ -150,11 +181,15 @@ async def main():
                     else:
                         current_query = current_query + "\n\n" + " ".join(iteration_response)
                         current_query = current_query + "  What should I do next?"
-
                     # Get model's response with timeout
                     print("Preparing to generate LLM response...")
                     prompt = f"{system_prompt}\n\nQuery: {current_query}"
                     try:
+
+
+                        evaluation_response = await generate_with_timeout(client, f"{evaluation_prompt}\n Query: {current_query}"")
+                        print(f"Evaluation Response: {evaluation_response}")
+
                         response = await generate_with_timeout(client, prompt)
                         response_text = response.text.strip()
                         print(f"LLM Response: {response_text}")
