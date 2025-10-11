@@ -165,7 +165,7 @@ async def main():
                 DO NOT include any explanations or additional text.
                 Your entire response should be a single line starting with either FUNCTION_CALL: or FINAL_ANSWER: or USE_PAINT: or COMPLETE_RUN"""
 
-                with open('evaluation_prompt.md', 'r') as file:
+                with open('evaluation_prompt.md', 'r', encoding='utf-8') as file:
                     evaluation_prompt = file.read()
 
                 query = """Find the ASCII values of characters in INDIA and then return sum of exponentials of those values. """
@@ -187,7 +187,7 @@ async def main():
                     try:
 
 
-                        evaluation_response = await generate_with_timeout(client, f"{evaluation_prompt}\n Query: {current_query}"")
+                        evaluation_response = await generate_with_timeout(client, f"{evaluation_prompt}\n Query: {current_query}")
                         print(f"Evaluation Response: {evaluation_response}")
 
                         response = await generate_with_timeout(client, prompt)
