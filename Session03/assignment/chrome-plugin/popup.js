@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const transmissionSelect = document.getElementById('transmission');
     const stateSelect = document.getElementById('state');
     const fetchButton = document.getElementById('fetchVariants');
+    const openWindowButton = document.getElementById('openWindow');
     const resultDiv = document.getElementById('result');
 
     function clearOptions(select) {
@@ -156,4 +157,27 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchButton.disabled = false;
         }
     });
+
+    // Open a persistent popup window (won't auto-close on outside clicks)
+    if (openWindowButton) {
+        openWindowButton.addEventListener('click', () => {
+            // Ask background to open a new window running popup.html
+            if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
+                chrome.runtime.sendMessage({ action: 'openPersistentWindow' }, (resp) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('Error sending openPersistentWindow message:', chrome.runtime.lastError);
+                        return;
+                    }
+                    if (resp && resp.success) {
+                        console.log('Opened persistent window, id:', resp.windowId);
+                    } else {
+                        console.error('Failed to open persistent window:', resp && resp.error);
+                    }
+                });
+            } else {
+                // Fallback: open a normal window/tab
+                window.open('popup.html', '_blank', 'width=420,height=640');
+            }
+        });
+    }
 });
