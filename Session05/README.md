@@ -1,7 +1,3 @@
-### Commands
+Classcode / CoT main
 
-`uv add "mcp[cli]"`
-
-`uv run mcp dev .\example_mcp_server.py`
-
-`uv run mcp_client.py`
+uv add google-genai dotenv rich "mcp[cli]"
