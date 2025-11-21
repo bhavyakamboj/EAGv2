@@ -59,7 +59,7 @@ async def main():
         print("Establishing connection to MCP server...")
         server_params = StdioServerParameters(
             command="python",
-            args=["paint-mcp-server.py"]
+            args=["mcp-server.py"]
         )
 
         async with stdio_client(server_params) as (read, write):
@@ -118,57 +118,74 @@ async def main():
                 print("Created system prompt...")
                 # import pdb; pdb.set_trace()
                 
-                system_prompt = f"""You are a math agent with painting skills solving problems in iterations. You have access to various mathematical tools.
-                You also have access to a MSPaint application to draw and add your solution to the canvas.
+                system_prompt = f"""
+                You are a math-and-planning agent that solves car-pricing problems using explicit, verifiable reasoning steps. You operate in a loop where you reason, act, and verify.
 
-                Available tools:
+                ### AVAILABLE FUNCTIONS FOR TOOL USE
                 {tools_description}
+                
+                ### OUTPUT FORMAT
+                You must respond with a SINGLE valid JSON object. Do not include markdown formatting (like ```json).
+                The JSON must strictly follow this schema:
 
-                MSPaint Application Information:
-                Rectangle co-ordinates: x1 = 957, y1 = 943, x2 = 1225, y2 = 1104
+                {
+                "step_id": <integer_step_number>,
+                "reasoning": {
+                    "type": "<arithmetic | logic | lookup | verification>",
+                    "thought_trace": "<detailed step-by-step thinking>",
+                    "need_for_tool": <true | false>
+                },
+                "self_check": {
+                    "input_validation": "<confirm inputs are present/valid>",
+                    "plausibility_check": "<confirm previous result makes sense>",
+                    "previous_response": "<answer_or_error_message>",
+                    "last_user_input": "<previous input from user>",
+                    "last_tool_use": "<previous tool use>",
+                    "status": "<PASS | FAIL>"
+                },
+                "action": {
+                    "type": "<FUNCTION_CALL | FINAL_ANSWER | ERROR>",
+                    "function_name": "<name_or_null>",
+                    "function_args": ["<arg1>", "<arg2>"],
+                    "final_response_text": "<answer_or_error_message>"
+                }
+                }
 
+                ### REASONING & BEHAVIOR RULES
+                1. **Trace Your Thoughts:** Fill the `thought_trace` field before deciding on an action. Explain *why* you are taking the next step.
+                2. **Categorize:** Explicitly label your logic in `reasoning.type`.
+                3. **Verify Inputs:** Before calling a function, ensure you have all required arguments in the `self_check` field.
+                4. **Safety Fallback:** If `self_check.status` is "FAIL" or if you lack information, set `action.type` to "ERROR" and ask the user for missing information.
+                5. **Tool Separation:** Never perform the math for `on_road_price` or `road_tax` or try to do tool use yourself. You must call the tools.
+                6. **Iterative Flow:** Use the output provided by the user (from previous tool calls) to inform your next JSON response.
 
-                You must respond with EXACTLY ONE line in one of these formats (no additional text):
-                1. For function calls:
-                FUNCTION_CALL: function_name|param1|param2|...
+                ### EXAMPLE INTERACTION
+                User: "What is the price of a Tata Nexon?"
+                Agent:
+                {
+                "step_id": 1,
+                "reasoning": {
+                    "type": "logic",
+                    "thought_trace": "User asked for price but didn't specify variant, fuel, or transmission. I need to get missing information.",
+                    "need_for_tool": false
+                },
+                "self_check": {
+                    "input_validation": "Brand and Model present. Fuel type and transmission missing",
+                    "plausibility_check": "N/A",
+                    "status": "FAIL"
+                },
+                "action": {
+                    "type": "ERROR",
+                    "function_name": "variants",
+                    "function_args": ["Tata", "Nexon", null, null],
+                    "final_response_text": "fuel_type and transmission not specified"
+                }
+                }"""
 
-                2. For final answers:
-                FINAL_ANSWER: number
-
-                3. For drawing in Paint:
-                USE_PAINT: function_name|param1|param2|...
-
-                4. For completing the task:
-                COMPLETE_RUN
-
-                Important:
-                - When a function returns multiple values, you need to process all of them
-                - Only give FINAL_ANSWER when you have completed all necessary calculations
-                - Only USE_PAINT when you are ready to draw in Paint with the FINAL_ANSWER
-                - Using paint Steps:
-                    - First start the paint application by calling open_paint
-                    - Then draw a rectangle using draw_rectangle giving correct parameters
-                    - Finally add text using add_text_in_paint with the FINAL_ANSWER: number as text
-                    - You must call these functions in the correct order
-                - Do not include multiple responses. Give ONE response at a time.
-                - Do not include any explanations or additional text.
-                - Do not repeat function calls with the same parameters
-                - After you have completed the task, you can call COMPLETE_RUN to end the program
-
-                Examples:
-                - FUNCTION_CALL: add|5|3
-                - FUNCTION_CALL: strings_to_chars_to_int|INDIA
-                - FINAL_ANSWER: 42
-                - USE_PAINT: draw_rectangle|957|943|1225|1104
-                - COMPLETE_RUN
-
-                DO NOT include any explanations or additional text.
-                Your entire response should be a single line starting with either FUNCTION_CALL: or FINAL_ANSWER: or USE_PAINT: or COMPLETE_RUN"""
-
-                with open('evaluation_prompt.md', 'r', encoding='utf-8') as file:
+                with open('prompt_of_prompts.md', 'r', encoding='utf-8') as file:
                     evaluation_prompt = file.read()
 
-                query = """Find the ASCII values of characters in INDIA and then return sum of exponentials of those values. """
+                query = """Find the on road price of a car with brancd as "Tata", model as "Nexon", fuel type as "Petrol", transmission as "Automatic" and state as "Delhi"."""
                 print("Starting iteration loop...")
                 
                 # Use global iteration variables
@@ -206,7 +223,7 @@ async def main():
                         break
 
 
-                    if response_text.startswith("FUNCTION_CALL:") or response_text.startswith("USE_PAINT:"):
+                    if response_text.startswith("FUNCTION_CALL:") or response_text.startswith(""):
                         _, function_info = response_text.split(":", 1)
                         parts = [p.strip() for p in function_info.split("|")]
                         func_name, params = parts[0], parts[1:]
@@ -260,9 +277,7 @@ async def main():
                             
                             result = await session.call_tool(func_name, arguments=arguments)
 
-                            # Wait longer for Paint to be fully maximized
-                            if func_name.startswith("open_paint"):
-                                await asyncio.sleep(1)
+
 
                             print(f"DEBUG: Raw result: {result}")
                             
@@ -308,7 +323,7 @@ async def main():
                         iteration_response.append(
                                 f"In the {iteration + 1} you completed calculations with {response_text}."
                                 f"Now call the paint tools starting with USE_PAINT: open_paint"
-                                f"Then draw_rectangle with Rectangle co-ordinates followed by add_text_in_paint with the {response_text} as text."
+                    
                             )
                         last_response = iteration_result
                     
