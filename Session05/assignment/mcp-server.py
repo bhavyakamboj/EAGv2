@@ -9,6 +9,8 @@ import sys
 import time
 import logging
 import json
+from rich.console import Console
+from rich.panel import Panel
 
 # Configure logger to include timestamp and log level. Use DEBUG to log everything.
 logging.basicConfig(
@@ -49,12 +51,10 @@ prices = {
     }
 }
 
-# DEFINE TOOLS
-
 @mcp.tool()
 def getPrice(brand : str, model : str, fuel_type : str, transmission : str, variant : str) -> int:
     """Get ex-showroom price for car with given brand, model, fuel type, transmission, and variant"""
-    return prices[brand][model][fuel_type][transmission][variant]
+    return prices[brand.upper][model.upper][fuel_type.upper][transmission.upper][variant.upper]
 
 @mcp.tool()
 def variants(brand: str, model: str, fuel_type: str, transmission: str) -> list:

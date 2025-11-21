@@ -3,11 +3,13 @@ from dotenv import load_dotenv
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from google import genai
-import asyncio
+import asyncio, time
 from rich.console import Console
 from rich.panel import Panel
+import sys
 
-console = Console()
+# send main diagnostic output to stderr
+console = Console(file=sys.stderr)
 
 # Load environment variables and setup Gemini
 load_dotenv()
@@ -44,9 +46,11 @@ async def main():
     try:
         console.print(Panel("Chain of Thought Calculator", border_style="cyan"))
 
+        # use same python interpreter and absolute path to cot_tools.py
+        cot_tools_path = os.path.join(os.path.dirname(__file__), "cot_tools.py")
         server_params = StdioServerParameters(
-            command="python",
-            args=["cot_tools.py"]
+            command=sys.executable,
+            args=[cot_tools_path]
         )
 
         async with stdio_client(server_params) as (read, write):
@@ -87,6 +91,8 @@ Assistant: FINAL_ANSWER: [20]"""
                 conversation_history = []
 
                 while True:
+                    # non-blocking sleep
+                    await asyncio.sleep(1)
                     response = await generate_with_timeout(client, prompt)
                     if not response or not response.text:
                         break

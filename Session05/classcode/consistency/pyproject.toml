@@ -1,13 +1,11 @@
 [project]
-name = "assignment"
+name = "consistency"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "flask>=3.1.2",
-    "google-genai>=1.51.0",
+    "dotenv>=0.9.9",
+    "google-genai>=1.52.0",
     "mcp[cli]>=1.22.0",
-    "pillow>=12.0.0",
-    "rich>=14.2.0",
 ]

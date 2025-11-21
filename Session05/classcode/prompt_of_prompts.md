@@ -53,3 +53,4 @@ Respond with a structured review in this format:
   "fallbacks": false,
   "overall_clarity": "Excellent structure, but could improve with self-checks and error fallbacks."
 }
+```

@@ -1,4 +1,5 @@
 import os
+from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
@@ -6,9 +7,17 @@ import asyncio
 from google import genai
 from concurrent.futures import TimeoutError
 from functools import partial
+import json, time
+from rich.console import Console
+from rich.panel import Panel
+
+console = Console()
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Initialize Flask app
+app = Flask(__name__)
 
 # Access your API key and initialize Gemini client correctly
 api_key = os.getenv("GEMINI_API_KEY")
@@ -21,8 +30,8 @@ iteration_response = []
 
 async def generate_with_timeout(client, prompt, timeout=10):
     """Generate content with a timeout"""
-    print("Starting LLM generation...")
     try:
+        console.print(Panel("Car on-road price calculator.", border_style="magenta"))
         # Convert the synchronous generate_content call to run in a thread
         loop = asyncio.get_event_loop()
         response = await asyncio.wait_for(
@@ -38,10 +47,10 @@ async def generate_with_timeout(client, prompt, timeout=10):
         print("LLM generation completed")
         return response
     except TimeoutError:
-        print("LLM generation timed out!")
+        console.print("[red]LLM generation timed out![/red]")
         raise
     except Exception as e:
-        print(f"Error in LLM generation: {e}")
+        print(f"[red]Error in LLM generation: {e}[/red]")
         raise
 
 def reset_state():
@@ -51,28 +60,27 @@ def reset_state():
     iteration = 0
     iteration_response = []
 
-async def main():
+async def process_query(query: str):
     reset_state()  # Reset at the start of main
-    print("Starting main execution...")
     try:
         # Create a single MCP server connection
-        print("Establishing connection to MCP server...")
+        console.print("[yellow]Establishing connection to MCP server...[/yellow]")
         server_params = StdioServerParameters(
             command="python",
             args=["mcp-server.py"]
         )
 
         async with stdio_client(server_params) as (read, write):
-            print("Connection established, creating session...")
+            console.print("[yellow]Connection established, creating session...[/yellow]")
             async with ClientSession(read, write) as session:
-                print("Session created, initializing...")
+                console.print("[yellow]Session created, initializing...[/yellow]")
                 await session.initialize()
                 
                 # Get available tools
-                print("Requesting tool list...")
+                console.print("[yellow]Requesting tool list...[/yellow]")
                 tools_result = await session.list_tools()
                 tools = tools_result.tools
-                print(f"Successfully retrieved {len(tools)} tools")
+                console.print(f"[green]Successfully retrieved {len(tools)} tools[/green]")
 
                 # Create system prompt with available tools
                 print("Creating system prompt...")
@@ -105,18 +113,20 @@ async def main():
                             tool_desc = f"{i+1}. {name}({params_str}) - {desc}"
                             tools_description.append(tool_desc)
                             print(f"Added description for tool: {tool_desc}")
+
                         except Exception as e:
-                            print(f"Error processing tool {i}: {e}")
+                            print(f"[red]Error processing tool {i}: {e}[/red]")
                             tools_description.append(f"{i+1}. Error processing tool")
                     
                     tools_description = "\n".join(tools_description)
-                    print("Successfully created tools description")
+                    console.print("[green]Successfully created tools description[/green]")
+
                 except Exception as e:
-                    print(f"Error creating tools description: {e}")
+                    console.print(f"[red]Error creating tools description: {e}[/red]")
+
                     tools_description = "Error loading tools"
                 
-                print("Created system prompt...")
-                # import pdb; pdb.set_trace()
+                console.print("[green]Created system prompt...[/green]")
                 
                 system_prompt = f"""
                 You are a math-and-planning agent that solves car-pricing problems using explicit, verifiable reasoning steps. You operate in a loop where you reason, act, and verify.
@@ -128,163 +138,125 @@ async def main():
                 You must respond with a SINGLE valid JSON object. Do not include markdown formatting (like ```json).
                 The JSON must strictly follow this schema:
 
-                {
-                "step_id": <integer_step_number>,
-                "reasoning": {
-                    "type": "<arithmetic | logic | lookup | verification>",
-                    "thought_trace": "<detailed step-by-step thinking>",
-                    "need_for_tool": <true | false>
-                },
-                "self_check": {
-                    "input_validation": "<confirm inputs are present/valid>",
-                    "plausibility_check": "<confirm previous result makes sense>",
+                {{
+                "step_id": integer_step_number,
+                "reasoning": {{
+                    "type": "< arithmetic | logic | lookup | verification >",
+                    "thought_trace": "< detailed step-by-step thinking >",
+                    "need_for_tool":< true | false >
+                }},
+                "self_check": {{
+                    "input_validation": "confirm inputs are present/valid",
+                    "plausibility_check": "confirm previous result makes sense",
                     "previous_response": "<answer_or_error_message>",
                     "last_user_input": "<previous input from user>",
-                    "last_tool_use": "<previous tool use>",
-                    "status": "<PASS | FAIL>"
-                },
-                "action": {
-                    "type": "<FUNCTION_CALL | FINAL_ANSWER | ERROR>",
+                    "last_tool_use": "previous tool use",
+                    "status": "<PASS | FAIL"
+                }},
+                "action": {{
+                    "type": "FUNCTION_CALL | FINAL_ANSWER | ERROR",
                     "function_name": "<name_or_null>",
-                    "function_args": ["<arg1>", "<arg2>"],
+                    "function_args": {{"arg1": "value1", "arg2": "value2"}},
                     "final_response_text": "<answer_or_error_message>"
-                }
-                }
+                }}
+                }}
 
                 ### REASONING & BEHAVIOR RULES
                 1. **Trace Your Thoughts:** Fill the `thought_trace` field before deciding on an action. Explain *why* you are taking the next step.
                 2. **Categorize:** Explicitly label your logic in `reasoning.type`.
                 3. **Verify Inputs:** Before calling a function, ensure you have all required arguments in the `self_check` field.
                 4. **Safety Fallback:** If `self_check.status` is "FAIL" or if you lack information, set `action.type` to "ERROR" and ask the user for missing information.
-                5. **Tool Separation:** Never perform the math for `on_road_price` or `road_tax` or try to do tool use yourself. You must call the tools.
+                5. **Tool Separation:** Never perform the math for `on_road_price` or `road_tax_multiplier` yourself. You must call the tools.
                 6. **Iterative Flow:** Use the output provided by the user (from previous tool calls) to inform your next JSON response.
-
-                ### EXAMPLE INTERACTION
-                User: "What is the price of a Tata Nexon?"
-                Agent:
-                {
-                "step_id": 1,
-                "reasoning": {
-                    "type": "logic",
-                    "thought_trace": "User asked for price but didn't specify variant, fuel, or transmission. I need to get missing information.",
-                    "need_for_tool": false
-                },
-                "self_check": {
-                    "input_validation": "Brand and Model present. Fuel type and transmission missing",
-                    "plausibility_check": "N/A",
-                    "status": "FAIL"
-                },
-                "action": {
-                    "type": "ERROR",
-                    "function_name": "variants",
-                    "function_args": ["Tata", "Nexon", null, null],
-                    "final_response_text": "fuel_type and transmission not specified"
-                }
-                }"""
-
-                with open('prompt_of_prompts.md', 'r', encoding='utf-8') as file:
+                7. **When to Stop:** Return FINAL_ANSWER when you have the complete on_road_price calculation."""
+                
+                with open("prompt_of_prompts.md", "r", encoding='utf-8') as file:
                     evaluation_prompt = file.read()
 
-                query = """Find the on road price of a car with brancd as "Tata", model as "Nexon", fuel type as "Petrol", transmission as "Automatic" and state as "Delhi"."""
+                query = """Find the on road price of a car with brand as "Tata", model as "Harrier", fuel type as "Diesel", transmission as "Automatic" and state as "Delhi"."""
                 print("Starting iteration loop...")
+                
+                # Evaluate the system prompt before proceeding
+                print("\n--- Evaluating System Prompt ---")
+                try:
+                    system_prompt_evaluation = await generate_with_timeout(
+                        client, 
+                        f"{evaluation_prompt}\n\nSystem Prompt to evaluate:\n{system_prompt}"
+                    )
+                    evaluation_result = system_prompt_evaluation.text.strip()
+                    console.print(f"System Prompt Evaluation Result:\n[green]{evaluation_result}[/green]")
+                    print("Evaluation completed. Proceeding with main loop...\n")
+                except Exception as e:
+                    console.print(f"[red]Error evaluating system prompt: {e}[/red]")
+                    evaluation_result = None
                 
                 # Use global iteration variables
                 global iteration, last_response
+                context = ""
                 
                 while iteration < max_iterations:
+                    time.sleep(1)  # Small delay for rate limiting
                     print(f"\n--- Iteration {iteration + 1} ---")
-                    if last_response is None:
+                    if iteration == 0:
                         current_query = query
                     else:
-                        current_query = current_query + "\n\n" + " ".join(iteration_response)
-                        current_query = current_query + "  What should I do next?"
+                        current_query = f"{query}\n\nPrevious context:\n{context}\n\nWhat should I do next?"
+                    
                     # Get model's response with timeout
                     print("Preparing to generate LLM response...")
                     prompt = f"{system_prompt}\n\nQuery: {current_query}"
+
                     try:
-
-
-                        evaluation_response = await generate_with_timeout(client, f"{evaluation_prompt}\n Query: {current_query}")
-                        print(f"Evaluation Response: {evaluation_response}")
-
                         response = await generate_with_timeout(client, prompt)
                         response_text = response.text.strip()
-                        print(f"LLM Response: {response_text}")
+                        console.print(f"[green]LLM Response:\n{response_text}[/green]")
                         
-                        # Find the FUNCTION_CALL line in the response
-                        for line in response_text.split('\n'):
-                            line = line.strip()
-                            if (line.startswith("FUNCTION_CALL:") or line.startswith("USE_PAINT:")):
-                                response_text = line
-                                break
+                        # Parse JSON response
+                        try:
+                            # Try to extract JSON from response
+                            json_start = response_text.find('{')
+                            json_end = response_text.rfind('}') + 1
+                            if json_start != -1 and json_end > json_start:
+                                json_str = response_text[json_start:json_end]
+                                agent_response = json.loads(json_str)
+                            else:
+                                raise ValueError("No JSON found in response")
+                        except json.JSONDecodeError as e:
+                            console.print(f"[red]Failed to parse JSON: {e}[/red]")
+                            iteration_response.append(f"Iteration {iteration + 1}: Invalid JSON response")
+                            iteration += 1
+                            continue
                         
                     except Exception as e:
-                        print(f"Failed to get LLM response: {e}")
+                        console.print(f"[red]Failed to get LLM response: {e}[/red]")
                         break
 
-
-                    if response_text.startswith("FUNCTION_CALL:") or response_text.startswith(""):
-                        _, function_info = response_text.split(":", 1)
-                        parts = [p.strip() for p in function_info.split("|")]
-                        func_name, params = parts[0], parts[1:]
+                    # Process the agent response
+                    action_type = agent_response.get('action', {}).get('type')
+                    
+                    if action_type == "FUNCTION_CALL":
+                        func_name = agent_response.get('action', {}).get('function_name')
+                        func_args = agent_response.get('action', {}).get('function_args', {})
                         
-                        print(f"\nDEBUG: Raw function info: {function_info}")
-                        print(f"DEBUG: Split parts: {parts}")
-                        print(f"DEBUG: Function name: {func_name}")
-                        print(f"DEBUG: Raw parameters: {params}")
+                        console.print(f"[yellow]Calling tool: {func_name}[/yellow]")
+                        console.print(f"[yellow]With arguments: {func_args}[/yellow]")
                         
                         try:
-                            # Find the matching tool to get its input schema
+                            # Find the matching tool to validate
                             tool = next((t for t in tools if t.name == func_name), None)
                             if not tool:
-                                print(f"DEBUG: Available tools: {[t.name for t in tools]}")
+                                print(f"Available tools: {[t.name for t in tools]}")
                                 raise ValueError(f"Unknown tool: {func_name}")
 
-                            print(f"DEBUG: Found tool: {tool.name}")
-                            print(f"DEBUG: Tool schema: {tool.inputSchema}")
-
-                            # Prepare arguments according to the tool's input schema
-                            arguments = {}
-                            schema_properties = tool.inputSchema.get('properties', {})
-                            print(f"DEBUG: Schema properties: {schema_properties}")
-
-                            for param_name, param_info in schema_properties.items():
-                                if not params:  # Check if we have enough parameters
-                                    raise ValueError(f"Not enough parameters provided for {func_name}")
-                                    
-                                value = params.pop(0)  # Get and remove the first parameter
-                                param_type = param_info.get('type', 'string')
-                                
-                                print(f"DEBUG: Converting parameter {param_name} with value {value} to type {param_type}")
-                                
-                                # Convert the value to the correct type based on the schema
-                                if param_type == 'integer':
-                                    arguments[param_name] = int(value)
-                                elif param_type == 'number':
-                                    arguments[param_name] = float(value)
-                                elif param_type == 'array':
-                                    # import pdb; pdb.set_trace()
-                                    # Handle array input
-                                    if isinstance(value, str):
-                                        value = value.strip('[]')
-                                        value = value.split(',')
-                                    arguments[param_name] = [int(x.strip()) for x in value]
-                                else:
-                                    arguments[param_name] = str(value)
-
-                            print(f"DEBUG: Final arguments: {arguments}")
-                            print(f"DEBUG: Calling tool {func_name}")
+                            console.print(f"[green]Found tool: {tool.name}[/green]")
                             
-                            result = await session.call_tool(func_name, arguments=arguments)
-
-
-
-                            print(f"DEBUG: Raw result: {result}")
+                            # Call the tool
+                            result = await session.call_tool(func_name, arguments=func_args)
                             
-                            # Get the full result content
+                            console.print(f"[green]Tool result: {result}[/green]")
+                            
+                            # Extract result content
                             if hasattr(result, 'content'):
-                                print(f"DEBUG: Result has content attribute")
-                                # Handle multiple content items
                                 if isinstance(result.content, list):
                                     iteration_result = [
                                         item.text if hasattr(item, 'text') else str(item)
@@ -293,54 +265,87 @@ async def main():
                                 else:
                                     iteration_result = str(result.content)
                             else:
-                                print(f"DEBUG: Result has no content attribute")
                                 iteration_result = str(result)
-                                
-                            print(f"DEBUG: Final iteration result: {iteration_result}")
                             
-                            # Format the response based on result type
+                            console.print(f"[green]Extracted result: {iteration_result}[/green]")
+                            
+                            # Format result for context
                             if isinstance(iteration_result, list):
-                                result_str = f"[{', '.join(iteration_result)}]"
+                                result_str = ", ".join(str(r) for r in iteration_result)
                             else:
                                 result_str = str(iteration_result)
                             
-                            iteration_response.append(
-                                f"In the {iteration + 1} iteration you called {func_name} with {arguments} parameters, "
-                                f"and the function returned {result_str}."
-                            )
+                            context += f"\nIteration {iteration + 1}: Called {func_name}({func_args}) and received: {result_str}"
+                            iteration_response.append(context)
                             last_response = iteration_result
 
                         except Exception as e:
-                            print(f"DEBUG: Error details: {str(e)}")
-                            print(f"DEBUG: Error type: {type(e)}")
+                            console.print(f"[red]Error calling tool: {str(e)}[/red]")
                             import traceback
                             traceback.print_exc()
-                            iteration_response.append(f"Error in iteration {iteration + 1}: {str(e)}")
-                            break
+                            context += f"\nIteration {iteration + 1}: Error - {str(e)}"
+                            iteration += 1
+                            continue
 
-                    elif response_text.startswith("FINAL_ANSWER:"):
-                        print("\n=== Math Agent Execution Complete ===")
-                        iteration_response.append(
-                                f"In the {iteration + 1} you completed calculations with {response_text}."
-                                f"Now call the paint tools starting with USE_PAINT: open_paint"
-                    
-                            )
-                        last_response = iteration_result
-                    
-                    elif response_text.startswith("COMPLETE"):
-                        print("\n=== Task complete. Ending run now ===")
+                    elif action_type == "FINAL_ANSWER":
+                        final_text = agent_response.get('action', {}).get('final_response_text')
+                        console.print(f"[green]\n=== Final Answer ===\n{final_text}[/green]")
                         break
+
+                    elif action_type == "ERROR":
+                        error_text = agent_response.get('action', {}).get('final_response_text')
+                        console.print(f"[red]\n=== Agent Error ===\n{error_text}[/red]")
+                        context += f"\nIteration {iteration + 1}: Error - {error_text}"
 
                     iteration += 1
 
+        return {
+            "status": "completed",
+            "iterations": iteration,
+            "final_response": last_response,
+            "iteration_log": iteration_response
+        }
+
     except Exception as e:
-        print(f"Error in main execution: {e}")
+        console.print(f"[red]Error in main execution: {e}[/red]")
         import traceback
         traceback.print_exc()
+        return {
+            "status": "error",
+            "error": str(e),
+            "iterations": iteration
+        }
     finally:
         reset_state()  # Reset at the end of main
 
-if __name__ == "__main__":
-    asyncio.run(main())
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint"""
+    return jsonify({"status": "healthy"}), 200
+
+@app.route('/v1/chat', methods=['POST'])
+def chat():
+    """API endpoint to process queries"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'query' not in data:
+            console.print("[red]Error: Missing 'query' field in request body[/red]")
+
+            return jsonify({"error": "Missing 'query' field in request body"}), 400
+        
+        query = data['query']
+        app.logger.info(f"Received query: {query}")
+        
+        # Process the query by running the async function
+        result = asyncio.run(process_query(query))
+        
+        return jsonify(result), 200
     
-    
+    except Exception as e:
+        console.print(f"[red]Error processing request: {str(e)}[/red]")
+
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)

@@ -6,8 +6,11 @@ from rich.table import Table
 from rich import box
 import math
 import re
+import sys
 
-console = Console()
+# change: send rich output to stderr to avoid contaminating MCP stdio
+console = Console(file=sys.stderr)
+
 mcp = FastMCP("CoTCalculator")
 
 @mcp.tool()
