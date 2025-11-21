@@ -170,6 +170,9 @@ async def process_query(query: str):
                 6. **Iterative Flow:** Use the output provided by the user (from previous tool calls) to inform your next JSON response.
                 7. **When to Stop:** Return FINAL_ANSWER when you have the complete on_road_price calculation."""
                 
+                # import pdb; pdb.set_trace()
+                print("{system_prompt}")
+
                 with open("prompt_of_prompts.md", "r", encoding='utf-8') as file:
                     evaluation_prompt = file.read()
 

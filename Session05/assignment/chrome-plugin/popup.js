@@ -23,6 +23,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const fetchButton = document.getElementById('fetchVariants');
     const openWindowButton = document.getElementById('openWindow');
     const resultDiv = document.getElementById('result');
+	const jsonInput = document.getElementById('jsonInput');
+	const formatBtn = document.getElementById('formatBtn');
+	const clearBtn = document.getElementById('clearBtn');
+	const finalBox = document.getElementById('finalBox');
+	const restPre = document.getElementById('restPre');
+	const restDetails = document.getElementById('restDetails');
+	const errorEl = document.getElementById('error');
 
     function clearOptions(select) {
         while (select.options.length > 0) select.remove(0);
@@ -180,4 +187,70 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+	function showError(msg) {
+		errorEl.textContent = msg;
+		errorEl.style.display = msg ? 'block' : 'none';
+	}
+
+	function formatAndDisplay(raw) {
+		showError('');
+		finalBox.style.display = 'none';
+		restPre.textContent = '';
+		restDetails.removeAttribute('open');
+
+		if (!raw || !raw.trim()) {
+			showError('Paste JSON into the input first.');
+			return;
+		}
+
+		try {
+			const obj = JSON.parse(raw);
+			// Extract final_response (if present)
+			let finalVal = undefined;
+			if (Object.prototype.hasOwnProperty.call(obj, 'final_response')) {
+				finalVal = obj['final_response'];
+			}
+
+			// Prepare remaining object (shallow copy without final_response)
+			const remaining = Array.isArray(obj) ? obj.slice() : { ...obj };
+			if (finalVal !== undefined && !Array.isArray(remaining)) {
+				delete remaining['final_response'];
+			}
+
+			// Show final_response highlighted
+			if (finalVal !== undefined) {
+				finalBox.style.display = 'block';
+				finalBox.textContent = typeof finalVal === 'string' ? finalVal : JSON.stringify(finalVal, null, 2);
+			} else {
+				finalBox.style.display = 'none';
+			}
+
+			// Show remaining pretty-printed inside collapsed details
+			const remainingText = JSON.stringify(remaining, null, 2);
+			restPre.textContent = remainingText;
+			// keep details collapsed by default; user can open
+		} catch (e) {
+			showError('Invalid JSON: ' + e.message);
+		}
+	}
+
+	formatBtn.addEventListener('click', () => {
+		formatAndDisplay(jsonInput.value);
+	});
+
+	clearBtn.addEventListener('click', () => {
+		jsonInput.value = '';
+		finalBox.style.display = 'none';
+		restPre.textContent = '';
+		showError('');
+	});
+
+	// Optional: if extension sends JSON via message, handle it
+	chrome.runtime?.onMessage?.addListener((msg) => {
+		if (msg?.json) {
+			jsonInput.value = typeof msg.json === 'string' ? msg.json : JSON.stringify(msg.json, null, 2);
+			formatAndDisplay(jsonInput.value);
+		}
+	});
 });

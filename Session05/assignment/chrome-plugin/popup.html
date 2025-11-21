@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Car Variant Selector</title>
     <link rel="stylesheet" href="popup.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div id="popup-container">
@@ -49,10 +50,33 @@
         </select>
 
         <button id="fetchVariants" type="button">Get Pricing</button>
-    <button id="openWindow" type="button">Open in Window</button>
+        <button id="openWindow" type="button">Open in Window</button>
 
         <div id="result" aria-live="polite"></div>
     </div>
+
+    <div class="container">
+        <h3>JSON Formatter</h3>
+
+        <textarea id="jsonInput" placeholder='Paste JSON here or receive from content script'></textarea>
+
+        <div class="controls">
+            <button id="formatBtn">Format & Highlight</button>
+            <button id="clearBtn">Clear</button>
+        </div>
+
+        <div id="output">
+            <div id="finalBox" class="final-box" aria-hidden="true"></div>
+
+            <details id="restDetails">
+                <summary>Show remaining JSON</summary>
+                <pre id="restPre" class="json-pre"></pre>
+            </details>
+
+            <div id="error" class="error" aria-live="polite"></div>
+        </div>
+    </div>
+
     <script src="popup.js"></script>
 </body>
 </html>
