@@ -45,3 +45,11 @@ class OnRoadPriceInput(BaseModel):
 class OnRoadPriceOutput(BaseModel):
     on_road_price: float
 
+class PreferencesOutput(BaseModel):
+    state: List[str]
+    fuel_type: str
+    transmission: str
+    minPrice: int
+    maxPrice: int
+
+

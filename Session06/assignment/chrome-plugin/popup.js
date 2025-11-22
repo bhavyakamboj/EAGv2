@@ -166,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (model) queryParts.push(`model as ${model.toLowerCase()},`);
         if (fuel) queryParts.push(`fuel type as ${fuel.toLowerCase()},`);
         if (transmission) queryParts.push(`transmission as ${transmission.toLowerCase()},`);
-        if (state) queryParts.push(`and state as ${state}`);
+        if (state) queryParts.push(`and state as ${state}. My budget is from 15 lakhs to 20 lakhs`);
 
         const query = queryParts.join(', ');
 
