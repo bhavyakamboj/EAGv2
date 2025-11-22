@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car Variant Selector</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <h1>Select Car Details</h1>
+    <form id="car-form">
+        <label for="brand">Brand:</label>
+        <select id="brand" name="brand">
+            <option value="TATA">TATA</option>
+            <!-- Add more brands as needed -->
+        </select>
+
+        <label for="model">Model:</label>
+        <select id="model" name="model">
+            <option value="HARRIER">HARRIER</option>
+            <!-- Add more models as needed -->
+        </select>
+
+        <label for="fuel-type">Fuel Type:</label>
+        <select id="fuel-type" name="fuel-type">
+            <option value="DIESEL">DIESEL</option>
+            <option value="ELECTRIC">ELECTRIC</option>
+        </select>
+
+        <label for="transmission">Transmission:</label>
+        <select id="transmission" name="transmission">
+            <option value="AUTOMATIC">AUTOMATIC</option>
+            <option value="MANUAL">MANUAL</option>
+        </select>
+
+        <label for="state">State:</label>
+        <select id="state" name="state">
+            <option value="DELHI">DELHI</option>
+            <option value="TAMILNADU">TAMILNADU</option>
+            <option value="MAHARASHTRA">MAHARASHTRA</option>
+            <!-- Add more states as needed -->
+        </select>
+
+        <button type="submit">Get Variants</button>
+    </form>
+
+    <div id="result"></div>
+
+    <script src="options.js"></script>
+</body>
+</html>

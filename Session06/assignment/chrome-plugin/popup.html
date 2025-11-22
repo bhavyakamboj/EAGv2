@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car Variant Selector</title>
+    <link rel="stylesheet" href="popup.css">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="result" aria-live="polite"></div>
+        <button id="darkModeToggle" style="margin-top: 10px;">Toggle Dark Mode</button>
+    <div id="popup-container" class="theme-text">
+        <h1>Select Car</h1>
+
+        <label for="brand">Brand</label>
+        <select id="brand" name="brand">
+            <option value="">Select Brand</option>
+        </select>
+
+        <label for="model">Model</label>
+        <select id="model" name="model" disabled>
+            <option value="">Select Model</option>
+        </select>
+
+        <label for="fuelType">Fuel Type</label>
+        <select id="fuelType" name="fuelType" disabled>
+            <option value="">Select Fuel Type</option>
+        </select>
+
+        <label for="transmission">Transmission</label>
+        <select id="transmission" name="transmission" disabled>
+            <option value="">Select Transmission</option>
+        </select>
+
+        <!-- variant select removed; variants are derived from brand/model/fuel/transmission -->
+
+        <label for="state">State</label>
+        <select id="state" name="state">
+            <option value="">Select State</option>
+            <option value="DELHI">Delhi</option>
+            <option value="TAMILNADU">Tamil Nadu</option>
+            <option value="MAHARASHTRA">Maharashtra</option>
+            <option value="GUJARAT">Gujarat</option>
+            <option value="KERALA">Kerala</option>
+            <option value="ODISHA">Odisha</option>
+            <option value="PUNJAB">Punjab</option>
+            <option value="WESTBENGAL">West Bengal</option>
+            <option value="MEGHALAYA">Meghalaya</option>
+            <option value="BIHAR">Bihar</option>
+            <option value="TELANGANA">Telangana</option>
+        </select>
+
+        <!-- NEW: Query preview -->
+        <div id="queryDisplay" class="theme-text" style="margin: 8px 0; font-weight: 600; color: #333;"></div>
+
+
+        <button id="fetchVariants" type="button">Get Pricing</button>
+        <button id="openWindow" type="button">Open in Window</button>
+
+        <div id="result" aria-live="polite"></div>
+    </div>
+
+    <div class="container theme-text">
+        <h3>JSON Formatter</h3>
+
+        <textarea id="jsonInput" class="theme-text" placeholder='Paste JSON here or receive from content script'></textarea>
+
+        <div class="controls">
+            <button id="formatBtn">Format & Highlight</button>
+            <button id="clearBtn">Clear</button>
+        </div>
+
+        <div id="output">
+            <div id="finalBox" class="final-box" aria-hidden="true"></div>
+
+            <details id="restDetails" class="theme-text">
+                <summary class="theme-text">Show remaining JSON</summary>
+                <pre id="restPre" class="json-pre"></pre>
+            </details>
+
+            <div id="error" class="error" aria-live="polite"></div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
