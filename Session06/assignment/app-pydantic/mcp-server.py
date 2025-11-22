@@ -11,6 +11,7 @@ import logging
 import json
 from rich.console import Console
 from rich.panel import Panel
+from models import PriceInput, PriceOutput, VariantsInput, VariantsOutput, ExShowroomPriceInput, ExShowroomPriceOutput, RoadTaxMultiplierInput, RoadTaxMultiplierOutput, OnRoadPriceInput, OnRoadPriceOutput, PreferencesOutput
 
 # Configure logger to include timestamp and log level. Use DEBUG to log everything.
 logging.basicConfig(
@@ -52,76 +53,60 @@ prices = {
 }
 
 @mcp.tool()
-def getPrice(brand : str, model : str, fuel_type : str, transmission : str, variant : str) -> int:
+def getPrice(input: PriceInput) -> PriceOutput:
     """Get ex-showroom price for car with given brand, model, fuel type, transmission, and variant"""
-    return prices[str(brand).upper][str(model).upper][str(fuel_type).upper][str(transmission).upper][str(variant).upper]
+    return prices[str(input.brand).upper][str(input.model).upper][str(input.fuel_type).upper][str(input.transmission).upper][str(input.variant).upper]
 
 @mcp.tool()
-def variants(brand: str, model: str, fuel_type: str, transmission: str) -> list:
+def variants(input: VariantsInput) -> VariantsOutput:
     """Get variants for a specific brand, model, fuel type, and transmission"""
-    logger.info(f"Fetching variants for {brand}, {model}, {fuel_type}, {transmission}")
-    brand = brand.upper().strip()
-    model = model.upper().strip()
-    fuel_type = fuel_type.upper().strip()
-    transmission = transmission.upper().strip()
+    logger.info(f"Fetching variants for {input}")
 
-    try:
-        if prices[brand][model][fuel_type][transmission]:
-            logger.info(f"Variants found: {list(prices[brand][model][fuel_type][transmission].keys())}")
-            return list(prices[brand][model][fuel_type][transmission].keys())
-    except KeyError:
-        pass
-    return []
+    return list(prices[input.brand.upper().strip()][input.model.upper().strip()][input.fuel_type.upper().strip()][input.transmission.upper().strip()].keys())
 
 @mcp.tool()
-def ex_showroom_price(brand: str, model: str, fuel_type: str, transmission: str, variant: str) -> int:
+def ex_showroom_price(input: ExShowroomPriceInput) -> ExShowroomPriceOutput:
     """Get ex-showroom price for given brand, model, fuel type, transmission, and variant"""
-    brand = brand.upper().strip()
-    model = model.upper().strip()
-    fuel_type = fuel_type.upper().strip()
-    transmission = transmission.upper().strip()
-    variant = variant.upper().strip()
-    logger.info(f"Fetching ex-showroom price for {brand}, {model}, {fuel_type}, {transmission}, {variant}")
 
-    return prices[brand][model][fuel_type][transmission][variant]
+    logger.info(f"Fetching ex-showroom price for {input}")
+
+    return prices[input.brand.upper().strip()][input.model.upper().strip()][input.fuel_type.upper().strip()][input.transmission.upper().strip()][input.variant.upper().strip()]
 
 @mcp.tool()
-def road_tax_multiplier(state: str, ex_showroom_price: int, fuel_type: str) -> float:
+def road_tax_multiplier(input: RoadTaxMultiplierInput) -> RoadTaxMultiplierOutput:
     """Calculate road tax multiplier based on state, price, and fuel type"""
-    logger.info(f"Calculating road tax multiplier for {state}, {ex_showroom_price}, {fuel_type}")
+    logger.info(f"Calculating road tax multiplier for {input.state}, {input.ex_showroom_price}, {input.fuel_type}")
     if int(ex_showroom_price) > 2500000:
         above25 = True
     else:
         above25 = False
 
-    if fuel_type == "ELECTRIC" and above25:
-        if state in ["DELHI", "TAMILNADU", "HYDERABAD", "MAHARASHTRA",
+    if input.fuel_type == "ELECTRIC" and above25:
+        if input.state in ["DELHI", "TAMILNADU", "HYDERABAD", "MAHARASHTRA",
                      "ODISHA", "PUNJAB", "WESTBENGAL", "MEGHALAYA", "BIHAR", "TELANGANA"]:
             return 0
-        if state in ["GUJARAT", "KERALA"]:
+        if input.state in ["GUJARAT", "KERALA"]:
             return 0.05
-    if fuel_type == "DIESEL":
+    if input.fuel_type == "DIESEL":
         return 0.125
 
     return 0.1
 
 @mcp.tool()
-def on_road_price(ex_showroom_price: int, road_tax_multiplier: float) -> int:
+def on_road_price(input: OnRoadPriceInput) -> OnRoadPriceOutput:
     """Calculate on-road price"""
-    ex_showroom_price = int(ex_showroom_price)
-    road_tax_multiplier = float(road_tax_multiplier)
-    road_tax = int(ex_showroom_price * road_tax_multiplier)
+    road_tax = input.ex_showroom_price * input.road_tax_multiplier
     state_development_fee = 4000
     registration_charges = 600
     fastag = 600
     hypothecation_endorsement = 1500
     other_charges = 400
-    insurance = int(ex_showroom_price * 0.05)
+    insurance = input.ex_showroom_price * 0.05  # Assuming insurance is 5% of ex-showroom price
 
     logger.info(
-        f"Calculating on-road price with ex_showroom_price: {ex_showroom_price}, road_tax: {road_tax}, state_development_fee: {state_development_fee}, registration_charges: {registration_charges}, fastag: {fastag}, hypothecation_endorsement: {hypothecation_endorsement}, other_charges: {other_charges}, insurance: {insurance}")
+        f"Calculating on-road price with ex_showroom_price: {input.ex_showroom_price}, road_tax: {road_tax}, state_development_fee: {state_development_fee}, registration_charges: {registration_charges}, fastag: {fastag}, hypothecation_endorsement: {hypothecation_endorsement}, other_charges: {other_charges}, insurance: {insurance}")
     
-    return ex_showroom_price + road_tax + state_development_fee + registration_charges + fastag + hypothecation_endorsement + other_charges + insurance
+    return float(ex_showroom_price + road_tax + state_development_fee + registration_charges + fastag + hypothecation_endorsement + other_charges + insurance)
 
 # DEFINE RESOURCES
 
