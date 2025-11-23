@@ -61,8 +61,8 @@ def getPrice(input: PriceInput) -> PriceOutput:
 def variants(input: VariantsInput) -> VariantsOutput:
     """Get variants for a specific brand, model, fuel type, and transmission"""
     logger.info(f"Fetching variants for {input}")
-
-    return {'variants': list(prices[input.brand.upper().strip()][input.model.upper().strip()][input.fuel_type.upper().strip()][input.transmission.upper().strip()].keys())}
+    import pdb; pdb.set_trace()
+    return VariantsOutput(result=list(prices[input.brand.upper().strip()][input.model.upper().strip()][input.fuel_type.upper().strip()][input.transmission.upper().strip()].keys())).json()
 
 @mcp.tool()
 def ex_showroom_price(input: ExShowroomPriceInput) -> ExShowroomPriceOutput:
@@ -70,7 +70,7 @@ def ex_showroom_price(input: ExShowroomPriceInput) -> ExShowroomPriceOutput:
 
     logger.info(f"Fetching ex-showroom price for {input}")
 
-    return {'ex_showroom_price': prices[input.brand.upper().strip()][input.model.upper().strip()][input.fuel_type.upper().strip()][input.transmission.upper().strip()][input.variant.upper().strip()]}
+    return {'result': prices[input.brand.upper().strip()][input.model.upper().strip()][input.fuel_type.upper().strip()][input.transmission.upper().strip()][input.variant.upper().strip()]}
 
 @mcp.tool()
 def road_tax_multiplier(input: RoadTaxMultiplierInput) -> RoadTaxMultiplierOutput:
@@ -90,7 +90,7 @@ def road_tax_multiplier(input: RoadTaxMultiplierInput) -> RoadTaxMultiplierOutpu
     if input.fuel_type == "DIESEL":
         return {'multiplier': 0.125}
 
-    return {'multiplier': 0.1}
+    return {'result': 0.1}
 
 @mcp.tool()
 def on_road_price(input: OnRoadPriceInput) -> OnRoadPriceOutput:
@@ -106,7 +106,7 @@ def on_road_price(input: OnRoadPriceInput) -> OnRoadPriceOutput:
     logger.info(
         f"Calculating on-road price with ex_showroom_price: {input.ex_showroom_price}, road_tax: {road_tax}, state_development_fee: {state_development_fee}, registration_charges: {registration_charges}, fastag: {fastag}, hypothecation_endorsement: {hypothecation_endorsement}, other_charges: {other_charges}, insurance: {insurance}")
     
-    return {'on_road_price': float(input.ex_showroom_price + road_tax + state_development_fee + registration_charges + fastag + hypothecation_endorsement + other_charges + insurance)}
+    return {'result': float(input.ex_showroom_price + road_tax + state_development_fee + registration_charges + fastag + hypothecation_endorsement + other_charges + insurance)}
 
 # DEFINE RESOURCES
 

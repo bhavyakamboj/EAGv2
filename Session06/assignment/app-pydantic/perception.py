@@ -5,8 +5,9 @@ import asyncio
 from concurrent.futures import TimeoutError
 from rich.console import Console
 from rich.panel import Panel
-from models import PreferencesOutput
+from models import FactsOutput
 from pydantic_core import from_json
+import memory
 
 console = Console()
 
@@ -15,7 +16,7 @@ load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key)  
 
-async def generate_with_timeout(client, prompt, timeout=10)->PreferencesOutput:
+async def generate_with_timeout(client, prompt, timeout=10)->FactsOutput:
     """Generate content with a timeout"""
     try:
         console.print(Panel("Perception Layer", border_style="magenta"))
@@ -48,16 +49,16 @@ async def process_perception(prompt):
     return None
 
 
-async def find_preferences(query: str) -> PreferencesOutput:
-    """Get user preferences from query using perception layer"""
+async def find_facts(query: str) -> FactsOutput:
+    """Get facts from query using perception layer"""
     system_prompt = f"""
-        You are a preferences agent that extracts preferences from the user query using explicit, verifiable reasoning steps. You complete the request in the sequence - reason, act, and verify.
+        You are a perception agent that extracts facts from the user query using explicit, verifiable reasoning steps. You complete the request in the sequence - reason, act, and verify.
 
         ### OUTPUT FORMAT
-        You must respond with a SINGLE valid JSON object. Do not include markdown formatting (like ```json). The Json object has to be directly parsable by the PreferencesOutput Pydantic model. So do not add any character before and after the JSON object. IT IS IMPORTANT.
+        You must respond with a SINGLE valid JSON object. Do not include markdown formatting (like ```json). The Json object has to be directly parsable by the FactsOutput Pydantic model. So do not add any character before and after the JSON object. IT IS IMPORTANT.
         The JSON must strictly follow this schema:
 
-        {PreferencesOutput.schema_json(indent=4)}
+        {FactsOutput.schema_json(indent=4)}
 
         ### Example
         For user query: "Find the on road price of a car with brand as "Tata", model as "Harrier", fuel type as "Diesel", transmission as "Automatic" and state in "Delhi" or "Karnataka" or "TamilNadu". My budget is from 15 lakhs to 25 lakhs"
@@ -75,17 +76,7 @@ async def find_preferences(query: str) -> PreferencesOutput:
         }}
 
         InCorrect Output:
-        ```json{{
-        "state": [
-            "Delhi",
-            "Karnataka",
-            "TamilNadu"
-        ],
-        "fuel_type": "Diesel",
-        "transmission": "Automatic",
-        "minPrice": 1500000,
-        "maxPrice": 2000000
-        }}```
+        ```json{{}}```
 
         ### REASONING & BEHAVIOR RULES
         1. **Trace Your Thoughts:** Fill the `thought_trace` field before deciding on an action. Explain *why* you are taking the next step.
@@ -119,16 +110,16 @@ async def find_preferences(query: str) -> PreferencesOutput:
         console.print(f"[red]Error evaluating system prompt: {e}[/red]")
         evaluation_result = None
     
-    prompt = f"{system_prompt}\n\nPreference Agent Query: {query}\n\nRespond with the required JSON object."
+    prompt = f"{system_prompt}\n\nPerception Agent Query: {query}\n\nRespond with the required JSON object."
     response = await generate_with_timeout(client, prompt)
     correctedResponse =  response.text.replace("```json", "").replace("```", "").strip()
 
 
     try:
         console.print(correctedResponse)
-        PreferencesOutput.model_validate_json(correctedResponse)
-        console.print("[green]Successfully validated the response against PreferencesOutput schema.[/green]")
-        result = PreferencesOutput.model_validate(from_json(correctedResponse))
+        FactsOutput.model_validate_json(correctedResponse)
+        console.print("[green]Successfully validated the response against FactsOutput schema.[/green]")
+        result = FactsOutput.model_validate(from_json(correctedResponse))
 
         return result
     except Exception as e:

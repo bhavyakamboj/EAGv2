@@ -11,37 +11,15 @@ import json, time
 from rich.console import Console
 from rich.panel import Panel
 from models import PreferencesOutput
+import perception
+import decision
+import action
+from perception import find_facts
+from memory import recall
 
 console = Console()
 
-def parse_function_call_params(param_parts: list[str]) -> dict:
-    """
-    Parses key=value parts from the FUNCTION_CALL format.
-    Supports nested keys like input.string=foo and list values like input.int_list=[1,2,3]
-    Returns a nested dictionary.
-    """
-    result = {}
 
-    for part in param_parts:
-        if "=" not in part:
-            raise ValueError(f"Invalid parameter format (expected key=value): {part}")
-
-        key, value = part.split("=", 1)
-
-        # Try to parse as Python literal (int, float, list, etc.)
-        try:
-            parsed_value = ast.literal_eval(value)
-        except Exception:
-            parsed_value = value.strip()
-
-        # Support nested keys like input.string
-        keys = key.split(".")
-        current = result
-        for k in keys[:-1]:
-            current = current.setdefault(k, {})
-        current[keys[-1]] = parsed_value
-
-    return result
 
 # Load environment variables from .env file
 load_dotenv()
@@ -95,10 +73,9 @@ def reset_state():
 async def process_query(query: str):
     reset_state()  # Reset at the start of main
 
-    from perception import find_preferences
-
-    preferences = await find_preferences(query)
-
+    facts = await find_facts(query)
+    # import pdb; pdb.set_trace()
+    preferences = await recall(query)
 
     try:
         # Create a single MCP server connection
@@ -113,6 +90,7 @@ async def process_query(query: str):
             async with ClientSession(read, write) as session:
                 console.print("[yellow]Session created, initializing...[/yellow]")
                 await session.initialize()
+                
                 
                 # Get available tools
                 console.print("[yellow]Requesting tool list...[/yellow]")
@@ -166,62 +144,11 @@ async def process_query(query: str):
                 
                 console.print("[green]Created system prompt...[/green]")
                 
-                system_prompt = f"""
-                You are a math agent solving problems in iterations. You have access to various mathematical tools.
-
-                Available tools:
-                {tools_description}
+                # Only evaluate prompt for Decision layer
+                system_prompt = await decision.get_system_prompt(tools_description)
                 
-                You must respond with EXACTLY ONE line in one of these formats (no additional text):
-
-                1. For function calls (using key=value format):
-                FUNCTION_CALL: function_name|param1=value1|param2=value2|...
-
-                - You can also use nested keys for structured inputs (e.g., input.string, input.int_list).
-                - For list-type inputs, use square brackets: input.int_list=[73,78,68,73,65]
-
-                2. For final answers:
-                FINAL_ANSWER: [number]
-
-                Important:
-                - Use exactly one FUNCTION_CALL or FINAL_ANSWER per step.
-                - Do not repeat function calls with the same parameters.
-                - Do not include explanatory text or formatting.
-                - When a function returns multiple values, you must process all of them.
-
-                ✅ Examples:
-                - FUNCTION_CALL: variants|input.brand=TATA|input.model=HARRIER|input.fuel_type=DIESEL|input.transmission=AUTOMATIC
-                - FUNCTION_CALL: ex_showroom_price|input.brand=TATA|input.model=HARRIER|input.fuel_type=DIESEL|input.transmission=AUTOMATIC|input.variant=PUREXAT
-                - FUNCTION_CALL: road_tax_multiplier|input.state=DELHI|input.ex_showroom_price=2303000|input.fuel_type=DIESEL
-                - FUNCTION_CALL: on_road_price|input.ex_showroom_price=2303000|input.road_tax_multiplier=1.12
-                - FINAL_ANSWER: 2579360.0
-
-                DO NOT include any explanations or extra text.
-                Your entire response must be a single line starting with either FUNCTION_CALL: or FINAL_ANSWER: 
-                """
-                
-                # import pdb; pdb.set_trace()
-                # print("{system_prompt}")
-
-                with open("prompt_of_prompts.md", "r", encoding='utf-8') as file:
-                    evaluation_prompt = file.read()
-
-                # query = """Find the on road price of a car with brand as "Tata", model as "Harrier", fuel type as "Diesel", transmission as "Automatic" and state as "Delhi"."""
-                print("Starting iteration loop...")
-                
-                # Evaluate the system prompt before proceeding
-                print("\n--- Evaluating System Prompt ---")
-                try:
-                    system_prompt_evaluation = await generate_with_timeout(
-                        client, 
-                        f"{evaluation_prompt}\n\nSystem Prompt to evaluate:\n{system_prompt}"
-                    )
-                    evaluation_result = system_prompt_evaluation.text.strip()
-                    console.print(f"System Prompt Evaluation Result:\n[green]{evaluation_result}[/green]")
-                    print("Evaluation completed. Proceeding with main loop...\n")
-                except Exception as e:
-                    console.print(f"[red]Error evaluating system prompt: {e}[/red]")
-                    evaluation_result = None
+                # Evaluate the decision system prompt
+                await evaluate_decision_prompt(system_prompt)
                 
                 # Use global iteration variables
                 global iteration, last_response
@@ -234,74 +161,38 @@ async def process_query(query: str):
                         current_query = query
                     else:
                         current_query = current_query + "\n\n" + " ".join(iteration_response)
-                        current_query = current_query + "  What should I do next?"
+                        # current_query = current_query + "  What should I do next?"
 
-                    # Get model's response with timeout
-                    print("Preparing to generate LLM response...")
-                    prompt = f"Preferences: {preferences}\n\n{system_prompt}\n\nQuery: {current_query}"
-                    # console.print(f"[blue]Prompt sent to model:[/blue]\n{prompt}\n")
-                    try:
-                        response = await generate_with_timeout(client, prompt)
-                        response_text = response.text.strip()
-                        print(f"LLM Response: {response_text}")
-                        
-                        # Find the FUNCTION_CALL line in the response
-                        for line in response_text.split('\n'):
-                            line = line.strip()
-                            if line.startswith("FUNCTION_CALL:"):
-                                response_text = line
-                                break
-                        
-                    except Exception as e:
-                        print(f"Failed to get LLM response: {e}")
-                        break
-
+                    
+                    print("Invoking decision layer...")
+                    response_text = await decision.perform_decision(facts, preferences, current_query, tools_description, last_response)
+                    
 
                     if response_text.startswith("FUNCTION_CALL:"):
-                        _, function_info = response_text.split(":", 1)
-                        parts = [p.strip() for p in function_info.split("|")]
-                        func_name, param_parts = parts[0], parts[1:]
-
-                        print(f"\nDEBUG: Raw function info: {function_info}")
-                        print(f"DEBUG: Split parts: {parts}")
-                        print(f"DEBUG: Function name: {func_name}")
-                        print(f"DEBUG: Raw parameters: {param_parts}")
-
                         try:
-                            tool = next((t for t in tools if t.name == func_name), None)
-                            if not tool:
-                                print(f"DEBUG: Available tools: {[t.name for t in tools]}")
-                                raise ValueError(f"Unknown tool: {func_name}")
-
-                            print(f"DEBUG: Found tool: {tool.name}")
-                            print(f"DEBUG: Tool schema: {tool.inputSchema}")
-
-                            arguments = parse_function_call_params(param_parts)
-                            print(f"DEBUG: Final arguments: {arguments}")
-                            print(f"DEBUG: Calling tool {func_name}")
-
-                            result = await session.call_tool(func_name, arguments=arguments)
-                            print(f"DEBUG: Raw result: {result}")
-
-                            if hasattr(result, 'content'):
+                            
+                            # Action layer activated
+                            action_result = await action.perform_action(action=response_text)
+                            import pdb; pdb.set_trace()
+                            if hasattr(action_result, 'content'):
                                 print(f"DEBUG: Result has content attribute")
-                                if isinstance(result.content, list):
+                                if isinstance(action_result.content, list):
                                     iteration_result = [
                                         item.text if hasattr(item, 'text') else str(item)
-                                        for item in result.content
+                                        for item in iteration_result.content
                                     ]
                                 else:
-                                    iteration_result = str(result.content)
+                                    iteration_result = str(iteration_result.content)
                             else:
                                 print(f"DEBUG: Result has no content attribute")
-                                iteration_result = str(result)
+                                iteration_result = str(action_result.result)
 
                             print(f"DEBUG: Final iteration result: {iteration_result}")
 
                             result_str = f"[{', '.join(iteration_result)}]" if isinstance(iteration_result, list) else str(iteration_result)
 
                             iteration_response.append(
-                                f"In the {iteration + 1} iteration you called {func_name} with {arguments} parameters, "
+                                f"In the {iteration + 1} iteration you called {action_result.func_name} with {action_result.arguments} parameters, "
                                 f"and the function returned {result_str}."
                             )
                             last_response = iteration_result
@@ -340,6 +231,36 @@ async def process_query(query: str):
     finally:
         reset_state()  # Reset at the end of main
 
+
+async def evaluate_decision_prompt(system_prompt):
+    """Evaluate the decision system prompt using the decision layer"""
+    with open("prompt_of_prompts.md", "r", encoding='utf-8') as file:
+        evaluation_prompt = file.read()
+
+    # query = """Find the on road price of a car with brand as "Tata", model as "Harrier", fuel type as "Diesel", transmission as "Automatic" and state as "Delhi"."""
+    print("Starting iteration loop...")
+    
+    # Evaluate the system prompt before proceeding
+    print("\n--- Evaluating System Prompt ---")
+    try:
+        system_prompt_evaluation = await generate_with_timeout(
+            client, 
+            f"{evaluation_prompt}\n\nSystem Prompt to evaluate:\n{system_prompt}"
+        )
+        evaluation_result = system_prompt_evaluation.text.strip()
+        console.print(f"System Prompt Evaluation Result:\n[green]{evaluation_result}[/green]")
+        print("Evaluation completed. Proceeding with main loop...\n")
+    except Exception as e:
+        console.print(f"[red]Error evaluating system prompt: {e}[/red]")
+        evaluation_result = None
+
+async def process_preferences(preferences: str):
+    import memory
+    from memory import MemoryItem
+
+    item = MemoryItem(fact=preferences, importance = 0.9, source="api")
+    await memory.store(item)
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
@@ -363,6 +284,61 @@ def chat():
         result = asyncio.run(process_query(query))
         
         return jsonify(result), 200
+    
+    except Exception as e:
+        console.print(f"[red]Error processing request: {str(e)}[/red]")
+
+        return jsonify({"error": str(e)}), 500
+    
+@app.route('/v1/preferences', methods=['POST'])
+def set_preferences():
+    """API endpoint to process preferences"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'preferences' not in data:
+            console.print("[red]Error: Missing 'preferences' field in request body[/red]")
+
+            return jsonify({"error": "Missing 'preferences' field in request body"}), 400
+        
+        preferences = data['preferences']
+        app.logger.info(f"Received preferences: {preferences}")
+        
+        # Process the query by running the async function
+        result = asyncio.run(process_preferences(preferences))
+        
+        return jsonify(result), 200
+    
+    except Exception as e:
+        console.print(f"[red]Error processing request: {str(e)}[/red]")
+
+        return jsonify({"error": str(e)}), 500
+    
+@app.route('/v1/preferences', methods=['GET'])
+def get_preferences():
+    """API endpoint to get preferences"""
+    import memory
+    try:        
+        # Process the query by running the async function
+        memory_items = asyncio.run(memory.list())
+
+        memory_json = [i.json() for i in memory_items]    
+        return {"preferences": memory_json}, 200
+    
+    except Exception as e:
+        console.print(f"[red]Error processing request: {str(e)}[/red]")
+
+        return jsonify({"error": str(e)}), 500
+    
+@app.route('/v1/preferences', methods=['DELETE'])
+def delete_preferences():
+    """API endpoint to delete preferences"""
+    import memory
+    try:        
+        # Process the query by running the async function
+        asyncio.clear_memories()
+
+        return None, 200
     
     except Exception as e:
         console.print(f"[red]Error processing request: {str(e)}[/red]")

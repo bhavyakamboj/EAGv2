@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 class PriceInput(BaseModel):
     brand: str
@@ -18,7 +18,7 @@ class VariantsInput(BaseModel):
     transmission: str
 
 class VariantsOutput(BaseModel):
-    variants: List[str]
+    result: List[str]
 
 class ExShowroomPriceInput(BaseModel):
     brand: str
@@ -28,7 +28,7 @@ class ExShowroomPriceInput(BaseModel):
     variant: str
 
 class ExShowroomPriceOutput(BaseModel):
-    ex_showroom_price: int
+    result: int
 
 class RoadTaxMultiplierInput(BaseModel):
     state: str
@@ -36,19 +36,26 @@ class RoadTaxMultiplierInput(BaseModel):
     fuel_type: str
 
 class RoadTaxMultiplierOutput(BaseModel):
-    multiplier: float
+    result: float
 
 class OnRoadPriceInput(BaseModel):
     ex_showroom_price: int
     road_tax_multiplier: float
 
 class OnRoadPriceOutput(BaseModel):
-    on_road_price: float
+    result: float
 
-class PreferencesOutput(BaseModel):
+class FactsOutput(BaseModel):
     state: List[str]
+    brand: str
+    model: str
     fuel_type: str
     transmission: str
+    minPrice: int
+    maxPrice: int
+
+class PreferencesOutput(BaseModel):
+    state: str
     minPrice: int
     maxPrice: int
 
